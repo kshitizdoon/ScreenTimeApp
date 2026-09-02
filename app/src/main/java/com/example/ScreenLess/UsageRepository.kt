@@ -111,14 +111,13 @@ object UsageRepository {
         val store = CategoryStore(context)
 
         return todayUsageMinutes(context)
-            .entries
-            .groupBy { entry ->
-                store.getCategory(entry.key)
+            .flatMap { (packageName, minutes) ->
+                store.getCategories(packageName)
+                    .map { category -> category to minutes }
             }
+            .groupBy { (category, _) -> category }
             .mapValues { (_, entries) ->
-                entries.sumOf { entry ->
-                    entry.value
-                }
+                entries.sumOf { (_, minutes) -> minutes }
             }
     }
 
@@ -151,9 +150,9 @@ object UsageRepository {
             // Only apps assigned to this category
             .filter { app ->
 
-                store.getCategory(
+                category in store.getCategories(
                     app.packageName
-                ) == category
+                )
             }
 
             // Package name + today's usage

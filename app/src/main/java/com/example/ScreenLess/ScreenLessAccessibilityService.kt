@@ -326,7 +326,8 @@ class ScreenLessAccessibilityService : AccessibilityService() {
     private fun showOpeningIntervention(
         packageName: String,
         usageMinutes: Long,
-        limitMinutes: Int
+        limitMinutes: Int,
+        graduated: Boolean
     ) {
 
         val now =
@@ -402,17 +403,6 @@ class ScreenLessAccessibilityService : AccessibilityService() {
         // CALCULATE GRADUATED FRICTION
         // =====================================================
 
-        val store =
-            CategoryStore(this)
-
-        val category =
-            store.getCategory(packageName)
-
-        val graduated =
-            store.isGraduatedFrictionEnabled(
-                category
-            )
-
         val waitSeconds =
             calculateWaitSeconds(
                 usageMinutes = usageMinutes,
@@ -477,6 +467,18 @@ class ScreenLessAccessibilityService : AccessibilityService() {
     }
 
 
+
+    private fun categoryUsageMinutes(
+        usageByPackage: Map<String, Long>,
+        store: CategoryStore,
+        category: AppCategory
+    ): Long =
+        usageByPackage
+            .filterKeys { otherPackage ->
+                category in store.getCategories(otherPackage)
+            }
+            .values
+            .sum()
 
     private fun checkLimit(packageName: String) {
 
@@ -564,52 +566,32 @@ class ScreenLessAccessibilityService : AccessibilityService() {
         // 2. FIND THE APP'S CATEGORY
         // =====================================================
 
-        val category =
-            store.getCategory(packageName)
+        val categories = store.getCategories(packageName)
 
-        // Apps that aren't categorised don't get
-        // category limits or every-open intervention.
-        if (category == AppCategory.UNCATEGORIZED) {
+        // Apps that aren't categorised don't get category rules.
+        if (categories.isEmpty()) {
             return
         }
 
-        val categoryLimit =
-            store.getCategoryLimit(category)
-
-
-        // Calculate combined usage of all apps in this category.
-        //
-        // Example:
-        //
-        // YouTube    20m
-        // Instagram  15m
-        // Reddit      5m
-        // ----------------
-        // Video & Reels = 40m
-        //
-        val categoryUsage =
-            usageByPackage
-                .filterKeys { otherPackage ->
-
-                    store.getCategory(otherPackage) ==
-                            category
-                }
-                .values
-                .sum()
-
-
         // =====================================================
-        // 3. CHECK CATEGORY LIMIT
+        // 3. CHECK EVERY ASSIGNED CATEGORY LIMIT
         // =====================================================
 
-        if (
-            categoryLimit > 0 &&
-            categoryUsage >= categoryLimit
-        ) {
+        val reachedCategory = categories.firstOrNull { category ->
+            val limit = store.getCategoryLimit(category)
+            limit > 0 &&
+                    categoryUsageMinutes(usageByPackage, store, category) >= limit
+        }
+
+        if (reachedCategory != null) {
+
+            val categoryUsage =
+                categoryUsageMinutes(usageByPackage, store, reachedCategory)
+            val categoryLimit = store.getCategoryLimit(reachedCategory)
 
             android.util.Log.e(
                 "ScreenLessAccessibility",
-                "CATEGORY LIMIT REACHED -> ${category.label}"
+                "CATEGORY LIMIT REACHED -> ${reachedCategory.label}"
             )
 
             showLimitScreen(
@@ -617,7 +599,7 @@ class ScreenLessAccessibilityService : AccessibilityService() {
                 usageMinutes = categoryUsage,
                 limitMinutes = categoryLimit,
                 reason = "category",
-                limitName = category.label
+                limitName = reachedCategory.label
             )
 
             return
@@ -636,13 +618,12 @@ class ScreenLessAccessibilityService : AccessibilityService() {
         // has been reached.
         //
 
-        val requiresIntentionalOpening =
-            store.isOpeningIntentionEnabled(
-                category
-            )
+        val interventionCategory = categories.firstOrNull { category ->
+            store.isOpeningIntentionEnabled(category) ||
+                    store.isPipWorkflowEnabled(category)
+        }
 
-
-        if (requiresIntentionalOpening) {
+        if (interventionCategory != null) {
 
             /*
              * If Video & Reels has a category limit,
@@ -664,6 +645,13 @@ class ScreenLessAccessibilityService : AccessibilityService() {
              */
             val relevantUsage: Long
             val relevantLimit: Int
+
+            val categoryLimit = store.getCategoryLimit(interventionCategory)
+            val categoryUsage = categoryUsageMinutes(
+                usageByPackage,
+                store,
+                interventionCategory
+            )
 
             if (categoryLimit > 0) {
 
@@ -697,7 +685,8 @@ class ScreenLessAccessibilityService : AccessibilityService() {
             showOpeningIntervention(
                 packageName = packageName,
                 usageMinutes = relevantUsage,
-                limitMinutes = relevantLimit
+                limitMinutes = relevantLimit,
+                graduated = store.isGraduatedFrictionEnabled(interventionCategory)
             )
         }
     }

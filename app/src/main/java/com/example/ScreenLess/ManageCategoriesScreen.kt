@@ -142,6 +142,12 @@ private fun CategoryListScreen(
                 MaterialTheme
                     .typography
                     .headlineMedium
+            ,
+
+            color =
+                MaterialTheme
+                    .colorScheme
+                    .onBackground
         )
 
 
@@ -203,6 +209,12 @@ private fun CategoryListScreen(
                             MaterialTheme
                                 .typography
                                 .titleMedium
+                        ,
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurface
                     )
 
 
@@ -325,12 +337,26 @@ private fun CategoryDetailScreen(
             )
         }
 
+    val websites =
+        remember(category, refreshKey) {
+            store.websitesInCategory(category)
+                .sorted()
+        }
+
 
     // =====================================================
     // DIALOG STATE
     // =====================================================
 
     var showLimitDialog by remember {
+        mutableStateOf(false)
+    }
+
+    var showAddAppsDialog by remember {
+        mutableStateOf(false)
+    }
+
+    var showAddWebsiteDialog by remember {
         mutableStateOf(false)
     }
 
@@ -372,6 +398,10 @@ private fun CategoryDetailScreen(
                 category
             )
         )
+    }
+
+    var pipWorkflowEnabled by remember(category) {
+        mutableStateOf(store.isPipWorkflowEnabled(category))
     }
 
 
@@ -424,6 +454,12 @@ private fun CategoryDetailScreen(
                 MaterialTheme
                     .typography
                     .headlineLarge
+            ,
+
+            color =
+                MaterialTheme
+                    .colorScheme
+                    .onBackground
         )
 
 
@@ -457,7 +493,6 @@ private fun CategoryDetailScreen(
                 Modifier.height(12.dp)
         )
 
-
         Row(
             modifier =
                 Modifier.fillMaxWidth()
@@ -489,7 +524,6 @@ private fun CategoryDetailScreen(
             modifier =
                 Modifier.height(12.dp)
         )
-
 
         // =================================================
         // DAILY LIMIT
@@ -672,6 +706,16 @@ private fun CategoryDetailScreen(
             }
         )
 
+        CategorySettingSwitch(
+            title = "PiP workflow",
+            description = "Use App → Home → ScreenLess → App before opening.",
+            checked = pipWorkflowEnabled,
+            onCheckedChange = { enabled ->
+                pipWorkflowEnabled = enabled
+                store.setPipWorkflowEnabled(category, enabled)
+            }
+        )
+
 
         Spacer(
             modifier =
@@ -711,6 +755,21 @@ private fun CategoryDetailScreen(
             modifier =
                 Modifier.height(12.dp)
         )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(onClick = { showAddAppsDialog = true }) {
+                Text("Add apps")
+            }
+
+            OutlinedButton(onClick = { showAddWebsiteDialog = true }) {
+                Text("Add websites")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
 
         if (apps.isEmpty()) {
@@ -759,6 +818,12 @@ private fun CategoryDetailScreen(
                             MaterialTheme
                                 .typography
                                 .bodyLarge
+                        ,
+
+                        color =
+                            MaterialTheme
+                                .colorScheme
+                                .onSurface
                     )
 
 
@@ -773,9 +838,50 @@ private fun CategoryDetailScreen(
                                 .colorScheme
                                 .onSurfaceVariant
                     )
+
+                    TextButton(
+                        onClick = {
+                            store.removeFromCategory(packageName, category)
+                            refreshKey++
+                        }
+                    ) {
+                        Text("Remove")
+                    }
                 }
 
 
+                HorizontalDivider()
+            }
+        }
+
+        if (websites.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Text(
+                text = "WEBSITES",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            websites.forEach { domain ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = domain,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    TextButton(
+                        onClick = {
+                            store.removeWebsiteFromCategory(category, domain)
+                            refreshKey++
+                        }
+                    ) {
+                        Text("Remove")
+                    }
+                }
                 HorizontalDivider()
             }
         }
@@ -830,6 +936,35 @@ private fun CategoryDetailScreen(
 
                 showLimitDialog =
                     false
+            },
+
+            onRemoveLimit = {
+                store.setCategoryLimit(category, 0)
+                refreshKey++
+                showLimitDialog = false
+            }
+        )
+    }
+
+    if (showAddAppsDialog) {
+        AddAppsToCategoryDialog(
+            category = category,
+            store = store,
+            onDismiss = { showAddAppsDialog = false },
+            onSaved = {
+                refreshKey++
+                showAddAppsDialog = false
+            }
+        )
+    }
+
+    if (showAddWebsiteDialog) {
+        AddWebsiteDialog(
+            onDismiss = { showAddWebsiteDialog = false },
+            onAdd = { domain ->
+                store.addWebsiteToCategory(category, domain)
+                refreshKey++
+                showAddWebsiteDialog = false
             }
         )
     }
@@ -882,4 +1017,117 @@ private fun CategorySettingSwitch(
             onCheckedChange = onCheckedChange
         )
     }
+}
+
+@Composable
+private fun AddAppsToCategoryDialog(
+    category: AppCategory,
+    store: CategoryStore,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit
+) {
+    val context = LocalContext.current
+    val apps = remember { getLaunchableApps(context) }
+    val selectedPackages = remember {
+        mutableStateMapOf<String, Boolean>().apply {
+            apps.forEach { app ->
+                put(
+                    app.packageName,
+                    category in store.getCategories(app.packageName)
+                )
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add apps to ${category.label}") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                apps.forEach { app ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedPackages[app.packageName] =
+                                    !(selectedPackages[app.packageName] ?: false)
+                            }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = selectedPackages[app.packageName] ?: false,
+                            onCheckedChange = { checked ->
+                                selectedPackages[app.packageName] = checked
+                            }
+                        )
+                        Text(
+                            text = app.label,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    apps.forEach { app ->
+                        if (selectedPackages[app.packageName] == true) {
+                            store.addToCategory(app.packageName, category)
+                        } else {
+                            store.removeFromCategory(app.packageName, category)
+                        }
+                    }
+                    onSaved()
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun AddWebsiteDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String) -> Unit
+) {
+    var domain by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add website") },
+        text = {
+            TextField(
+                value = domain,
+                onValueChange = { domain = it },
+                singleLine = true,
+                label = { Text("Domain, e.g. youtube.com") }
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onAdd(domain) },
+                enabled = domain.isNotBlank()
+            ) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

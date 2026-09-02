@@ -2,6 +2,7 @@ package com.example.ScreenLess
 
 import android.content.Context
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,17 +10,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
+import androidx.core.graphics.drawable.toBitmap
+import android.graphics.drawable.Drawable
 
-private data class InstalledApp(
+data class InstalledApp(
     val packageName: String,
-    val label: String
+    val label: String,
+    val icon: Drawable?
 )
 
 
-private fun getLaunchableApps(
+fun getLaunchableApps(
     context: Context
 ): List<InstalledApp> {
 
@@ -43,7 +49,12 @@ private fun getLaunchableApps(
                 label =
                     packageManager
                         .getApplicationLabel(app)
-                        .toString()
+                        .toString(),
+
+                icon =
+                    runCatching {
+                        packageManager.getApplicationIcon(app)
+                    }.getOrNull()
             )
         }
         .sortedBy {
@@ -74,22 +85,11 @@ fun CategoryScreen(
             getLaunchableApps(context)
         }
 
-    val assignments =
-        remember {
+    var refreshKey by remember { mutableIntStateOf(0) }
 
-            mutableStateMapOf<String, AppCategory>()
-                .apply {
-
-                    apps.forEach { app ->
-
-                        put(
-                            app.packageName,
-                            store.getCategory(
-                                app.packageName
-                            )
-                        )
-                    }
-                }
+    val usageByPackage =
+        remember(refreshKey) {
+            UsageRepository.todayUsageMinutes(context)
         }
 
 
@@ -116,10 +116,16 @@ fun CategoryScreen(
 
             Text(
                 text = "Manage apps",
-                style =
-                    MaterialTheme
-                        .typography
-                        .headlineSmall
+            style =
+                MaterialTheme
+                    .typography
+                    .headlineSmall
+            ,
+
+            color =
+                MaterialTheme
+                    .colorScheme
+                    .onBackground
             )
 
 
@@ -131,11 +137,17 @@ fun CategoryScreen(
 
             Text(
                 text =
-                    "Set categories and individual limits.",
-                style =
-                    MaterialTheme
-                        .typography
-                        .bodyMedium
+                    "Review daily app usage and limits.",
+            style =
+                MaterialTheme
+                    .typography
+                    .bodyMedium
+            ,
+
+            color =
+                MaterialTheme
+                    .colorScheme
+                    .onSurfaceVariant
             )
 
 
@@ -151,20 +163,31 @@ fun CategoryScreen(
             key = { it.packageName }
         ) { app ->
 
-            var expanded by remember {
-                mutableStateOf(false)
-            }
-
-
-            val category =
-                assignments[app.packageName]
-                    ?: AppCategory.UNCATEGORIZED
-
-
             val appLimit =
                 store.getAppLimit(
                     app.packageName
                 )
+
+            val usageMinutes =
+                usageByPackage[app.packageName]
+                    ?: 0L
+
+            val progress =
+                if (appLimit > 0) {
+                    (usageMinutes.toFloat() / appLimit)
+                        .coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+
+            val iconPainter =
+                remember(app.icon) {
+                    app.icon?.let { icon ->
+                        BitmapPainter(
+                            icon.toBitmap().asImageBitmap()
+                        )
+                    }
+                }
 
 
             Column(
@@ -174,95 +197,28 @@ fun CategoryScreen(
             ) {
 
 
-                // APP NAME
-                Text(
-                    text = app.label,
-                    style =
-                        MaterialTheme
-                            .typography
-                            .titleMedium
-                )
-
-
-                Spacer(
-                    modifier =
-                        Modifier.height(4.dp)
-                )
-
-
                 Row(
                     modifier =
                         Modifier.fillMaxWidth(),
-
                     verticalAlignment =
                         Alignment.CenterVertically
                 ) {
+                    if (iconPainter != null) {
+                        Image(
+                            painter = iconPainter,
+                            contentDescription = "${app.label} icon",
+                            modifier = Modifier.size(44.dp)
+                        )
 
-
-                    // -------------------------
-                    // CATEGORY
-                    // -------------------------
-
-                    Box(
-                        modifier =
-                            Modifier.weight(1f)
-                    ) {
-
-                        TextButton(
-                            onClick = {
-                                expanded = true
-                            }
-                        ) {
-
-                            Text(
-                                text = category.label
-                            )
-                        }
-
-
-                        DropdownMenu(
-                            expanded = expanded,
-
-                            onDismissRequest = {
-                                expanded = false
-                            }
-                        ) {
-
-
-                            AppCategory.assignable
-                                .forEach { newCategory ->
-
-
-                                    DropdownMenuItem(
-
-                                        text = {
-                                            Text(
-                                                newCategory.label
-                                            )
-                                        },
-
-                                        onClick = {
-
-                                            store.setCategory(
-                                                app.packageName,
-                                                newCategory
-                                            )
-
-                                            assignments[
-                                                app.packageName
-                                            ] = newCategory
-
-                                            expanded = false
-                                        }
-                                    )
-                                }
-                        }
+                        Spacer(modifier = Modifier.width(12.dp))
                     }
 
-
-                    // -------------------------
-                    // APP LIMIT
-                    // -------------------------
+                    Text(
+                        text = app.label,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
 
                     TextButton(
                         onClick = {
@@ -273,13 +229,40 @@ fun CategoryScreen(
                         Text(
                             text =
                                 if (appLimit > 0) {
-                                    "Limit: ${formatMinutes(appLimit.toLong())}"
+                                    formatMinutes(appLimit.toLong())
                                 } else {
-                                    "Set limit"
+                                    "Unlimited"
                                 }
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth(),
+                    color =
+                        if (appLimit > 0) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outline
+                        },
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text =
+                        if (appLimit > 0) {
+                            "${formatMinutes(usageMinutes)} / ${formatMinutes(appLimit.toLong())}"
+                        } else {
+                            "${formatMinutes(usageMinutes)} / Unlimited"
+                        },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
 
                 HorizontalDivider()
@@ -312,6 +295,19 @@ fun CategoryScreen(
                         minutes
                 )
 
+                refreshKey++
+
+                limitApp = null
+            },
+
+            onRemoveLimit = {
+                store.setAppLimit(
+                    packageName = app.packageName,
+                    minutes = 0
+                )
+
+                refreshKey++
+
                 limitApp = null
             }
         )
@@ -321,7 +317,8 @@ fun CategoryScreen(
 fun SimpleAppLimitDialog(
     appName: String,
     onDismiss: () -> Unit,
-    onLimitSelected: (Int) -> Unit
+    onLimitSelected: (Int) -> Unit,
+    onRemoveLimit: () -> Unit
 ) {
 
     AlertDialog(
@@ -387,7 +384,13 @@ fun SimpleAppLimitDialog(
         },
 
 
-        confirmButton = {},
+        confirmButton = {
+            TextButton(
+                onClick = onRemoveLimit
+            ) {
+                Text("Remove time limit")
+            }
+        },
 
 
         dismissButton = {

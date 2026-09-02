@@ -398,6 +398,12 @@ class MainActivity : ComponentActivity() {
                                 androidx.compose.material3.MaterialTheme
                                     .typography
                                     .headlineLarge
+                            ,
+
+                            color =
+                                androidx.compose.material3.MaterialTheme
+                                    .colorScheme
+                                    .onBackground
                         )
 
 
@@ -407,9 +413,9 @@ class MainActivity : ComponentActivity() {
                         )
 
 
-                        // =================================================
-                        // SETUP
-                        // =================================================
+                        // Setup is an exception state: only show actions for
+                        // permissions that still need the user's attention.
+                        if (!usageAccessEnabled || !accessibilityEnabled) {
 
                         androidx.compose.material3.Text(
 
@@ -419,6 +425,12 @@ class MainActivity : ComponentActivity() {
                                 androidx.compose.material3.MaterialTheme
                                     .typography
                                     .titleLarge
+                            ,
+
+                            color =
+                                androidx.compose.material3.MaterialTheme
+                                    .colorScheme
+                                    .onBackground
                         )
 
 
@@ -428,16 +440,20 @@ class MainActivity : ComponentActivity() {
                         )
 
 
-                        PermissionStatusRow(
-                            name = "Usage Access",
-                            enabled = usageAccessEnabled
-                        )
+                            if (!usageAccessEnabled) {
+                                PermissionStatusRow(
+                                    name = "Usage Access",
+                                    enabled = false
+                                )
+                            }
 
 
-                        PermissionStatusRow(
-                            name = "Accessibility",
-                            enabled = accessibilityEnabled
-                        )
+                            if (!accessibilityEnabled) {
+                                PermissionStatusRow(
+                                    name = "Accessibility",
+                                    enabled = false
+                                )
+                            }
 
 
                         // -------------------------------------------------
@@ -522,10 +538,11 @@ class MainActivity : ComponentActivity() {
                         }
 
 
-                        androidx.compose.foundation.layout.Spacer(
-                            modifier =
-                                androidx.compose.ui.Modifier.height(28.dp)
-                        )
+                            androidx.compose.foundation.layout.Spacer(
+                                modifier =
+                                    androidx.compose.ui.Modifier.height(28.dp)
+                            )
+                        }
 
 
                         // =================================================
@@ -722,14 +739,18 @@ class MainActivity : ComponentActivity() {
                                             "Manage categories →",
 
                                         color =
-                                            androidx.compose.ui.graphics.Color(
-                                                0xFF0D47A1
-                                            ),
+                                            androidx.compose.material3.MaterialTheme
+                                                .colorScheme
+                                                .primary,
 
                                         style =
                                             androidx.compose.material3.MaterialTheme
                                                 .typography
-                                                .titleSmall
+                                                .titleMedium
+                                                .copy(
+                                                    fontWeight =
+                                                        androidx.compose.ui.text.font.FontWeight.Bold
+                                                )
                                     )
                                 }
                             }
@@ -893,14 +914,18 @@ class MainActivity : ComponentActivity() {
                                             "Manage apps →",
 
                                         color =
-                                            androidx.compose.ui.graphics.Color(
-                                                0xFF0D47A1
-                                            ),
+                                            androidx.compose.material3.MaterialTheme
+                                                .colorScheme
+                                                .primary,
 
                                         style =
                                             androidx.compose.material3.MaterialTheme
                                                 .typography
-                                                .titleSmall
+                                                .titleMedium
+                                                .copy(
+                                                    fontWeight =
+                                                        androidx.compose.ui.text.font.FontWeight.Bold
+                                                )
                                     )
                                 }
                             }
@@ -1097,7 +1122,8 @@ fun CategoryLimitDialog(
     category: AppCategory,
     currentUsage: Long,
     onDismiss: () -> Unit,
-    onLimitSelected: (Int) -> Unit
+    onLimitSelected: (Int) -> Unit,
+    onRemoveLimit: () -> Unit
 ) {
 
     androidx.compose.material3.AlertDialog(
@@ -1145,7 +1171,13 @@ fun CategoryLimitDialog(
             }
         },
 
-        confirmButton = {},
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = onRemoveLimit
+            ) {
+                androidx.compose.material3.Text("Remove time limit")
+            }
+        },
 
         dismissButton = {
 
@@ -1226,7 +1258,11 @@ fun PermissionStatusRow(
         androidx.compose.material3.Text(
             text = name,
             modifier =
-                androidx.compose.ui.Modifier.weight(1f)
+                androidx.compose.ui.Modifier.weight(1f),
+            color =
+                androidx.compose.material3.MaterialTheme
+                    .colorScheme
+                    .onSurface
         )
 
         androidx.compose.material3.Text(
